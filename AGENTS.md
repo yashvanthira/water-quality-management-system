@@ -72,6 +72,15 @@ This section chronicles all iterations, user directives, technical challenges, a
   - Added dedicated `"🔬 Purification Recommender / நீர் சுத்திகரிப்பு"` tab to `app.py` along with language toggle and cards in Deep-Dive and Sample Submission tabs.
   - Verified 100% pass across all 7 test suite stages.
 
+### User Request 11: Workflow Architecture Documentation in README.md
+- **Request**: Add comprehensive workflow architecture in `README.md` referencing `AGENTS.md`.
+- **Action Taken**:
+  - Authored a dedicated `## 🏗️ Workflow & System Architecture` section in `README.md`.
+  - Integrated an interactive Mermaid flowchart detailing layers: Ingestion, Intent Routing, Hybrid RAG (SQLite + TF-IDF Vector Store), Multi-Agent Synthesis, Dual-Backend Execution, and Actionable Bilingual Delivery.
+  - Included the ASCII architectural block diagram and detailed agent sub-specializations table.
+  - Documented the end-to-end 5-stage pipeline including dynamic manual sample ingestion and real-time semantic memory re-indexing.
+  - Verified with test suite (`test_prototype.py`).
+
 ---
 
 ## 🤖 3. Agent Architecture & Sub-Specializations
@@ -141,7 +150,7 @@ This section chronicles all iterations, user directives, technical challenges, a
 ## 📁 5. Repository File Map
 
 ```
-c:\project folder\RAG Indian Water Prototype\
+water-quality-management-system/
 ├── AGENTS.md                    # Conversation log, agent architecture & history (this file)
 ├── README.md                    # Project overview, installation & feature documentation
 ├── .env                         # API credentials (GEMINI_API_KEY)
