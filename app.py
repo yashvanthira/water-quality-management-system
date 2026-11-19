@@ -1,7 +1,7 @@
 """
 Streamlit Web Application: AI Agent-Based Water Quality Monitoring, Public Awareness & Purification Recommender Assistant.
 Features:
-1. Conversational AI Assistant (Local Expert + Optional Gemini 3.5 Flash Lite)
+1. Conversational AI Assistant (Local Expert + Live Nexus AI nova-micro)
 2. Smart Water Purification & Treatment Recommender (English & தமிழ்)
 3. Interactive Water Quality Dashboard & Explorer
 4. Station Deep-Dive & Citizen Health Scorecard
@@ -33,10 +33,10 @@ CLEAN_CSV_PATH = os.path.join(BASE_DIR, "clean_water_data.csv")
 
 
 @st.cache_resource
-def load_agent(api_key=None, mode_preference="Auto", model_name="gemini-3.5-flash-lite"):
+def load_agent(api_key=None, mode_preference="Auto", model_name="nova-micro", base_url=None):
     effective_key = api_key if mode_preference != "Local Expert (Offline)" else None
     mode = "expert" if mode_preference == "Local Expert (Offline)" else "llm"
-    return WaterQualityAgent(api_key=effective_key, mode_override=mode, model_name=model_name)
+    return WaterQualityAgent(api_key=effective_key, mode_override=mode, model_name=model_name, base_url=base_url)
 
 
 @st.cache_data
@@ -48,6 +48,39 @@ def load_data():
 
 # Initialize state and data
 df = load_data()
+
+# Navigation pages: Landing Page is the default homepage
+NAV_PAGES = [
+    "🏠 Home",
+    "💬 AI Citizen Assistant",
+    "🔬 Purification Recommender / நீர் சுத்திகரிப்பு",
+    "📊 Monitoring Explorer",
+    "🎯 Station Deep-Dive",
+    "➕ Submit Water Sample",
+    "📑 Grievance Generator",
+    "📖 Standards & Guides"
+]
+
+# Handle programmatic navigation requests before widgets are instantiated
+if "pending_nav" in st.session_state and st.session_state["pending_nav"]:
+    st.session_state["nav_radio"] = st.session_state["pending_nav"]
+    st.session_state["current_page"] = st.session_state["pending_nav"]
+    del st.session_state["pending_nav"]
+
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = NAV_PAGES[0]
+
+if "nav_radio" not in st.session_state:
+    st.session_state["nav_radio"] = st.session_state["current_page"]
+
+
+def switch_page(target_page, query=None):
+    """Programmatically request page navigation via pending_nav before next run's widget instantiation."""
+    st.session_state["pending_nav"] = target_page
+    if query:
+        st.session_state["quick_query"] = query
+    st.rerun()
+
 
 # -------------------------------------------------------------
 # SIDEBAR
@@ -65,42 +98,41 @@ with st.sidebar:
         help="Select language for UI recommendations and purification advice"
     )
 
+    if st.session_state.get("nav_radio") not in NAV_PAGES:
+        st.session_state.nav_radio = NAV_PAGES[0]
+
     nav = st.radio(
         "Navigation / வழிசெலுத்தல்",
-        [
-            "💬 AI Citizen Assistant",
-            "🔬 Purification Recommender / நீர் சுத்திகரிப்பு",
-            "📊 Monitoring Explorer",
-            "🎯 Station Deep-Dive",
-            "➕ Submit Water Sample",
-            "📑 Grievance Generator",
-            "📖 Standards & Guides"
-        ]
+        NAV_PAGES,
+        key="nav_radio"
     )
+    st.session_state.current_page = nav
 
     st.markdown("---")
     st.subheader("⚙️ AI & LLM Engine")
     
-    env_key = os.environ.get("GEMINI_API_KEY", "").strip("'\" ")
-    if env_key:
-        st.success(f"✅ `.env` detected: `GEMINI_API_KEY` ({env_key[:6]}...{env_key[-4:]})")
+    nexus_key = os.environ.get("NEXUS_API_KEY", "").strip("'\" ")
+    nexus_base = os.environ.get("NEXUS_BASE_URL", "https://nexusapi.navigatelabs.ai").strip("'\" ")
+    if nexus_key:
+        masked = f"{nexus_key[:4]}...{nexus_key[-4:]}" if len(nexus_key) > 8 else "***"
+        st.success(f"✅ `.env` detected: `NEXUS_API_KEY` ({masked})")
     
     mode_selection = st.radio(
         "Agent Execution Mode",
-        ["🤖 Gemini LLM Agent (Live)", "⚡ Local Expert Agent (Offline Fast)"],
-        index=0 if env_key else 1
+        ["🤖 Nexus AI Agent (Live)", "⚡ Local Expert Agent (Offline Fast)"],
+        index=0 if nexus_key else 1
     )
 
-    if mode_selection == "🤖 Gemini LLM Agent (Live)":
-        custom_key = st.text_input("Gemini API Key", value=env_key, type="password")
+    if mode_selection == "🤖 Nexus AI Agent (Live)":
+        custom_key = st.text_input("Nexus API Key", value=nexus_key, type="password")
         model_choice = st.selectbox(
-            "Gemini Model",
-            ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"],
+            "Nexus Model",
+            ["nova-micro"],
             index=0,
-            help="Gemini 3.5 Flash Lite is optimized for low-latency reasoning and high-throughput RAG generation."
+            help="Verified active chat model on NavigateLabs Nexus API."
         )
-        agent = load_agent(api_key=custom_key, mode_preference="LLM", model_name=model_choice)
-        st.success(f"Active LLM: **{model_choice}**")
+        agent = load_agent(api_key=custom_key, mode_preference="LLM", model_name=model_choice, base_url=nexus_base)
+        st.success(f"Active LLM: **{model_choice}** (Nexus API)")
     else:
         agent = load_agent(api_key=None, mode_preference="Local Expert (Offline)")
         st.info("Using **Local Deterministic Expert Agent** (CPCB/WQI rule engine, instant response).")
@@ -110,9 +142,355 @@ with st.sidebar:
 
 
 # -------------------------------------------------------------
+# TAB 0: LANDING PAGE / HOME
+# -------------------------------------------------------------
+if nav == "🏠 Home":
+    # Modern Blue, White & Light Cyan Styling with Animations
+    st.markdown(
+        """
+        <style>
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(14, 165, 233, 0.15); }
+            50% { box-shadow: 0 8px 30px rgba(6, 182, 212, 0.35); }
+        }
+        .landing-hero {
+            background: linear-gradient(135deg, #f0fdfa 0%, #e0f2fe 50%, #ffffff 100%);
+            border: 1px solid #bae6fd;
+            border-radius: 20px;
+            padding: 30px 34px;
+            margin-bottom: 22px;
+            animation: fadeInDown 0.6s ease-out;
+            box-shadow: 0 10px 25px -5px rgba(14, 165, 233, 0.12), 0 8px 10px -6px rgba(14, 165, 233, 0.08);
+        }
+        .landing-title {
+            font-size: 2.5rem;
+            font-weight: 850;
+            background: linear-gradient(90deg, #0369a1 0%, #0284c7 35%, #06b6d4 75%, #0ea5e9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
+        }
+        .landing-subbrand {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #0284c7;
+            margin-bottom: 8px;
+        }
+        .landing-tagline {
+            font-size: 1.35rem;
+            font-weight: 750;
+            color: #0891b2;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .landing-intro {
+            font-size: 1.02rem;
+            line-height: 1.65;
+            color: #334155;
+            max-width: 1000px;
+            margin-bottom: 14px;
+        }
+        .badge-pill {
+            display: inline-block;
+            background-color: #e0f7fa;
+            color: #006064;
+            border: 1px solid #80deea;
+            border-radius: 9999px;
+            padding: 4px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        .feature-box {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-top: 4px solid #0284c7;
+            border-radius: 16px;
+            padding: 22px;
+            height: 100%;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.06);
+            transition: all 0.25s ease-in-out;
+        }
+        .feature-box:hover {
+            border-top-color: #06b6d4;
+            border-color: #7dd3fc;
+            box-shadow: 0 12px 24px rgba(14, 165, 233, 0.16);
+            transform: translateY(-4px);
+        }
+        .feature-title {
+            font-size: 1.15rem;
+            font-weight: 750;
+            color: #0369a1;
+            margin-bottom: 8px;
+        }
+        .feature-desc {
+            font-size: 0.95rem;
+            color: #475569;
+            line-height: 1.5;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f0fdfa 100%);
+            border: 1px solid #bbf7d0;
+            border-radius: 14px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0284c7;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Hero Header Container
+    st.markdown(
+        """
+        <div class="landing-hero">
+            <div class="landing-title">Water Quality Management System</div>
+            <div class="landing-subbrand">NeerParvai (நீர் பார்வை) 💧</div>
+            <div class="landing-tagline">🌊 Clean Water, Healthy Life</div>
+            <div class="landing-intro">
+                <strong>Clean water is fundamental to life, public health, and ecological balance.</strong> 
+                Across our rivers, lakes, drains, and groundwater sources, untreated municipal sewage, industrial effluents, 
+                and agricultural runoffs present invisible chemical and biological hazards. Rigorous, continuous water quality 
+                monitoring is essential to evaluate safety parameters (BOD, Dissolved Oxygen, Coliform bacteria, Nitrates, and pH) 
+                before contamination damages human health or local ecosystems.
+            </div>
+            <div class="landing-intro">
+                The <strong>Water Quality Management System</strong> democratizes official 
+                <strong>Central Pollution Control Board (CPCB)</strong> monitoring records across 194 continuous stations in 17 Indian States. 
+                Integrating <strong>Hybrid Retrieval-Augmented Generation (RAG)</strong>, multi-agent intelligence, and deterministic 
+                Water Quality Index (WQI) scoring, the platform delivers instantaneous safety verdicts, drinking suitability assessments, 
+                and contaminant-specific multi-barrier purification protocols in <strong>English & தமிழ்</strong>.
+            </div>
+            <div style="margin-top: 14px;">
+                <span class="badge-pill">🏛️ 194 CPCB Stations</span>
+                <span class="badge-pill">🗺️ 17 States & UTs</span>
+                <span class="badge-pill">⚡ Dual AI Engine (Nexus nova-micro + Offline Expert)</span>
+                <span class="badge-pill">🔬 Smart Purification & Treatment</span>
+                <span class="badge-pill">🌐 English & தமிழ்</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Hero Banner Image
+    hero_image_path = os.path.join(BASE_DIR, "assets", "neer_paarvai_banner.jpg")
+    if os.path.exists(hero_image_path):
+        st.image(
+            hero_image_path,
+            use_container_width=True,
+            caption="💧 Water Quality Management System — Clean Water, Healthy Life | NeerParvai (நீர் பார்வை)"
+        )
+    else:
+        st.image(
+            "https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1600&auto=format&fit=crop",
+            use_container_width=True,
+            caption="💧 Clean Water, Healthy Life — Intelligent Water Quality Monitoring"
+        )
+
+    # Prominent "Get Started" and Action Section
+    st.markdown("---")
+    st.markdown("### 🚀 Get Started with Water Quality AI")
+    st.markdown("Interact directly with our conversational assistant to evaluate bathing safety, locate pollution hotspots, or diagnose customized purification protocols.")
+
+    cta_c1, cta_c2, cta_c3 = st.columns([2.5, 1.2, 1.2])
+    with cta_c1:
+        if st.button("🚀 Get Started / Start Chatting 💬", type="primary", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant")
+    with cta_c2:
+        if st.button("🔬 Purification Advisor", use_container_width=True):
+            switch_page("🔬 Purification Recommender / நீர் சுத்திகரிப்பு")
+    with cta_c3:
+        if st.button("📊 National Explorer", use_container_width=True):
+            switch_page("📊 Monitoring Explorer")
+
+    # One-Click Quick Inquiries (Direct to Chatbot)
+    st.markdown("#### ⚡ Popular One-Click Inquiries / நேரடி வினவல்கள்:")
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
+        if st.button("🌊 River Betwa Bathing Safety?", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="Is River Betwa at Charantirghat safe for holy dipping?")
+        if st.button("🏖️ Rushikonda Beach quality?", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="Check water quality at Rushikonda Beach, Visakhapatnam")
+    with q2:
+        if st.button("🚨 Top 5 BOD Hotspots", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="Show top 5 water pollution hotspots with highest BOD")
+        if st.button("📊 State Summary: Jharkhand", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="State summary and overview for Jharkhand")
+    with q3:
+        if st.button("🔬 Purify High Nitrate Water", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="How to purify water with high nitrate concentration?")
+        if st.button("📚 Explain BOD & Coliform", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="Explain what BOD and Fecal Coliform mean for drinking water")
+    with q4:
+        if st.button("🌿 சுத்திகரிப்பு முறை (Tamil)", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="அதிக பாக்டீரியா உள்ள நீரை சுத்திகரிப்பது எப்படி?")
+        if st.button("📑 Draft SPCB Grievance", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant", query="Draft formal SPCB grievance petition for Agra Canal")
+
+    st.markdown("---")
+
+    # Live Environmental Data Baseline Metrics
+    st.markdown("### 📈 Live Environmental Monitoring Baseline")
+    if not df.empty:
+        total_stns = len(df)
+        total_states = df['state_name'].nunique() if 'state_name' in df.columns else 17
+        clean_stns = len(df[df['cpcb_class'].str.contains('Class A|Class B', na=False)]) if 'cpcb_class' in df.columns else 0
+        critical_hotspots = len(df[df['cpcb_class'].str.contains('Below Class E', na=False)]) if 'cpcb_class' in df.columns else 0
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.markdown(
+                f"""
+                <div class="stat-card">
+                    <div class="stat-number">{total_stns}</div>
+                    <div class="stat-label">🏛️ Continuous CPCB Stations</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        with m2:
+            st.markdown(
+                f"""
+                <div class="stat-card">
+                    <div class="stat-number">{total_states}</div>
+                    <div class="stat-label">🗺️ Indian States & UTs</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        with m3:
+            st.markdown(
+                f"""
+                <div class="stat-card" style="border-color: #86efac;">
+                    <div class="stat-number" style="color: #16a34a;">{clean_stns}</div>
+                    <div class="stat-label">🟢 Safe Bathing / Potable (Class A & B)</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        with m4:
+            st.markdown(
+                f"""
+                <div class="stat-card" style="border-color: #fca5a5;">
+                    <div class="stat-number" style="color: #dc2626;">{critical_hotspots}</div>
+                    <div class="stat-label">🔴 Severely Polluted Hotspots</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    st.markdown("---")
+
+    # Feature Suite Cards
+    st.markdown("### 🧩 Core System Capabilities")
+    f_c1, f_c2 = st.columns(2)
+    with f_c1:
+        st.markdown(
+            """
+            <div class="feature-box">
+                <div class="feature-title">💬 1. Conversational AI Assistant</div>
+                <div class="feature-desc">
+                    Dual-execution AI Assistant powered by NavigateLabs Nexus AI (nova-micro) and deterministic Local Expert rule engine. 
+                    Answers inquiries on outdoor bathing safety, potable water standards, and parameter exceedances with verified CPCB and BIS 10500 evidence.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("Start Chatting 💬", key="card_btn_chat", use_container_width=True):
+            switch_page("💬 AI Citizen Assistant")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown(
+            """
+            <div class="feature-box">
+                <div class="feature-title">📊 3. Interactive Monitoring Explorer</div>
+                <div class="feature-desc">
+                    Sub-second analytical queries across 194 continuous stations and 11 water body types (Rivers, Canals, Drains, Lakes, Beaches). 
+                    Inspect scatter plots (BOD vs DO), CPCB class breakdowns, and state-wide distributions.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("Explore Monitoring Data 📊", key="card_btn_explorer", use_container_width=True):
+            switch_page("📊 Monitoring Explorer")
+
+    with f_c2:
+        st.markdown(
+            """
+            <div class="feature-box">
+                <div class="feature-title">🔬 2. Smart Water Purification Protocols</div>
+                <div class="feature-desc">
+                    Automated diagnosis of chemical and microbiological contaminants (Nitrates, Coliforms, High BOD, Salinity). 
+                    Generates multi-barrier household and community purification recipes with critical warnings (e.g. against boiling high-nitrate water for infants).
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("Open Purification Advisor 🔬", key="card_btn_purify", use_container_width=True):
+            switch_page("🔬 Purification Recommender / நீர் சுத்திகரிப்பு")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown(
+            """
+            <div class="feature-box">
+                <div class="feature-title">➕ 4. Citizen Science & Field Sample Ingestion</div>
+                <div class="feature-desc">
+                    Input field measurements (pH, DO, BOD, Coliforms, Conductivity, Nitrates). 
+                    Instantly computes Water Quality Index (WQI), assigns CPCB Best Use Class, stores in SQLite, and dynamically updates RAG semantic memory.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("Submit Water Sample ➕", key="card_btn_submit", use_container_width=True):
+            switch_page("➕ Submit Water Sample")
+
+    st.markdown("---")
+    st.caption("💧 **Water Quality Management System — Clean Water, Healthy Life** | NeerParvai (நீர் பார்வை)")
+
+
+# -------------------------------------------------------------
 # TAB 1: CONVERSATIONAL ASSISTANT
 # -------------------------------------------------------------
-if nav == "💬 AI Citizen Assistant":
+elif nav == "💬 AI Citizen Assistant":
+    # Top Navigation Bar with Home Button to return to landing page
+    c_back, c_space = st.columns([1.5, 4.5])
+    with c_back:
+        if st.button("🏠 Home / Return to Landing Page", key="btn_chat_back_home", use_container_width=True):
+            switch_page("🏠 Home")
+    with c_space:
+        st.caption("👈 Click to return to the Water Quality Management System Home Page")
+
     st.header("💬 NeerParvai (நீர் பார்வை): AI Water Quality & Purification Assistant")
     st.markdown(
         "Ask questions about Indian rivers, bathing safety, drinking water standards, pollution hotspots, state summaries, or purification methods in English or தமிழ்."
